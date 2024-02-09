@@ -1,0 +1,45 @@
+[package]
+name = "docker-ssh-adapter"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "main"
+path = "src//main.rs"
+
+[[bin]]
+name = "proxy"
+path = "src/proxy_command.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[profile.debugger]         # Modify profile settings via config.
+inherits = "dev"         # Inherits settings from [profile.dev].
+opt-level = 0            # Optimization level.
+debug = true             # Include debug info.
+strip = "none"           # Removes symbols or debuginfo.
+debug-assertions = true  # Enables debug assertions.
+overflow-checks = true   # Enables runtime integer overflow checks.
+lto = false              # Sets link-time optimization.
+panic = 'unwind'         # The panic strategy.
+incremental = true       # Incremental compilation.
+codegen-units = 16       # Number of code generation units.
+
+[dependencies]
+bollard = "*"
+russh = {  version = "0.40.2", features = ["openssl"] }
+russh-keys = {  version = "0.40.1", features = ["openssl"] }
+tokio= { version = "*", features = ["rt", "rt-multi-thread", "macros", "io-std", "fs"] }
+regex = "1.10.3"
+askama = "*"
+openssh = { version = "*", features = ["native-mux"] }
+tempfile = "*"
+mux = "*"
+log = "0.4.14"
+simple_logger = "4.3.3"
+clap = "*"
+futures = "0.3.30"
+async-trait = "0.1.77"
+anyhow = "1.0.79"
+env_logger = "0.11.1"
+shlex = "1.3.0"
