@@ -20,24 +20,76 @@ use crate::cli::{parse_and_match_args, ContainerArgs};
 use crate::docker::find_ssh_enabled_container;
 use log::{error, info};
 
+/// Represents a pair of output and input streams.
+///
+/// # Remarks
+///
+/// - The `output` field is a shared, thread-safe, mutable reference to a stream of log outputs.
+/// - The `input` field is a pinned, boxed, asynchronous write trait object which can be safely
+///   sent across threads.
 pub struct OutputInputPair {
     output:
         Arc<Mutex<Pin<Box<dyn Stream<Item = Result<LogOutput, bollard::errors::Error>> + Send>>>>,
     input: Pin<Box<dyn AsyncWrite + Send>>,
 }
 
+/// Represents a SSH client.
+///
+/// # Fields
+///
+/// - `session_handle`: A handle to the SSH session.
+/// - `io`: Optional pair of output and input streams.
+///
+/// # Remarks
+///
+/// - The `session_handle` field provides access to the session functionality of the SSH client,
+///   allowing the execution of commands, shell access, and file transfer.
+/// - The `io` field is an optional pair of output and input streams used for interacting with the SSH
+///   client. If `None`, the client does not have any associated streams.
 pub struct Client {
     session_handle: russh::server::Handle,
     io: Option<OutputInputPair>,
 }
 
+/// Represents an ssh server.
+///
+/// # Remarks
+///
+/// - The `clients` field is a shared, thread-safe, mutable reference to a hash map storing the
+///   clients connected to the server.
+/// - The `docker` field is an instance of the `bollard::docker` struct, representing the Docker api
+///   associated with the server.
+/// - The `id` field is an identifier associated with the server.
 #[derive(Clone)]
 pub struct Server {
     pub(crate) clients: Arc<Mutex<HashMap<(usize, ChannelId), Client>>>,
     pub(crate) docker: Docker,
     pub(crate) id: usize,
 }
-fn process_stream(
+
+/// Creates a closure that forwards the output of a container to a session channel.
+///
+/// # Arguments
+///
+/// * `channel` - The ID of the channel to send the output to.
+/// * `cloned_handle` - A cloned handle to the session.
+///
+/// # Returns
+///
+/// A boxed closure that takes a `Result<LogOutput, Error>` as input and returns a `Pin<Box<dyn Future<Output = ()> + Send + 'static>>`.
+///
+/// #Example
+/// ```
+/// let output = [`Stream<Item=Result<LogOutput, Error>>`]
+/// let session_handle = /* Create your session handle */;
+/// let channel = /* Define your channel */;
+///
+///     output
+///         .for_each(forward_container_output_to_session(channel, cloned_handle))
+///         .await;
+///```
+
+fn forward_container_output_to_session(
     channel: ChannelId,
     cloned_handle: Arc<Mutex<Handle>>,
 ) -> Box<
@@ -82,6 +134,18 @@ impl server::Server for Server {
     }
 }
 impl Server {
+    /// Create and start an exec process for a Docker container.
+    ///
+    /// # Arguments
+    ///
+    /// - `docker`: A reference to the Docker client.
+    /// - `args`: The container arguments.
+    /// - `container_id`: The ID of the container.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing `StartExecResults` if the exec process is created and started successfully,
+    /// or an `anyhow::Error` if an error occurred.
     async fn create_and_start_exec(
         &self,
         docker: &Docker,
@@ -143,6 +207,16 @@ impl Server {
         };
     }
 
+    /// Establishes a link between an input stream and an output stream and the client's session.
+    ///
+    /// # Arguments
+    ///
+    /// * `channel` - The ID of the channel used for communication.
+    /// * `session_handle` - The handle to the session.
+    /// * `client_id` - The ID of the client.
+    /// * `input` - The input stream to read from.
+    /// * `output` - The output stream to write to.
+    ///
     async fn link_io(
         &self,
         channel: ChannelId,
@@ -170,7 +244,7 @@ impl Server {
                 Box<dyn Stream<Item = Result<LogOutput, bollard::errors::Error>> + Send>,
             > = &mut *locked_output;
             stream
-                .for_each(process_stream(channel, cloned_handle))
+                .for_each(forward_container_output_to_session(channel, cloned_handle))
                 .await;
             let cloned_handle_2 = Arc::clone(&session_handle);
             let handle = cloned_handle_2.lock().await;

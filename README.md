@@ -1,6 +1,7 @@
 <img src=".github/assets/tunnyd.svg" width="200px" height="200px"/>
 
 # Tunnyd: Easy Docker Container Tunneling with SSH
+[![Rust](https://github.com/JarekToro/tunnyd/actions/workflows/rust.yml/badge.svg)](https://github.com/JarekToro/tunnyd/actions/workflows/rust.yml)
 
 Tunnyd is a Rust program designed to simplify the process of accessing Docker containers remotely without the need for exposing SSH ports or configuring bastion hosts. By leveraging a custom name pattern, Tunnyd establishes a secure tunneling mechanism, enabling seamless access to Docker containers over SSH.
 

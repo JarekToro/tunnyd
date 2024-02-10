@@ -15,7 +15,34 @@ const EXEC_DOCKER: &str = "docker";
 const SSH_COMMAND_ENV: &str = "SSH_ORIGINAL_COMMAND=${}";
 const COMMAND_SHELL: &str = "sh";
 
-/// Check validity of labels
+/// Checks the validity of a container based on its labels, target, and user.
+///
+/// # Arguments
+///
+/// * `labels` - A HashMap of labels associated with the container.
+/// * `target` - The target label value to match against the SSH hostname label.
+/// * `user` - The user label value to match against the allowed users label.
+///
+/// # Returns
+///
+/// Returns a boolean indicating whether the container is valid or not.
+///
+/// # Examples
+///
+/// ```
+/// use std::collections::HashMap;
+///
+/// let labels = {
+///     let mut hashmap = HashMap::new();
+///     hashmap.insert(String::from("ssh-enable"), String::from("true"));
+///     hashmap.insert(String::from("ssh-hostname"), String::from("myhost"));
+///     hashmap.insert(String::from("ssh-allowed-users"), String::from("user1,user2"));
+///     hashmap
+/// };
+///
+/// assert_eq!(true, check_container_validity(&labels, "myhost", "user1"));
+/// assert_eq!(false, check_container_validity(&labels, "otherhost", "user3"));
+/// ```
 fn check_container_validity(labels: &HashMap<String, String>, target: &str, user: &str) -> bool {
     if let Some(value) = labels.get(SSH_ENABLE_LABEL_KEY) {
         // Assuming value for SSH_ALLOWED_USERS_LABEL_KEY is comma separated
@@ -39,6 +66,29 @@ fn check_container_validity(labels: &HashMap<String, String>, target: &str, user
     }
 }
 
+/// Finds an SSH-enabled container based on the provided arguments.
+///
+/// # Arguments
+///
+/// * `args` - The arguments used to filter the containers.
+///
+/// # Returns
+///
+/// * `Result<ContainerSummary, Error>` - The container summary if a match is found, otherwise an error.
+///
+/// # Examples
+///
+/// ```rust
+/// use my_crate::ContainerArgs;
+/// use futures::executor::block_on;
+///
+/// let args = ContainerArgs {
+///     target: "name_matching_docker_label_tunnyD.hostname",
+///     user: "root",
+/// };
+///
+/// let result = find_ssh_enabled_container(&args).await;
+/// ```
 pub async fn find_ssh_enabled_container(args: &ContainerArgs) -> Result<ContainerSummary, Error> {
     let docker = connect_to_docker().await.expect("get docker");
     let options = ListContainersOptions::<String> {
@@ -105,6 +155,31 @@ pub async fn find_ssh_enabled_container(args: &ContainerArgs) -> Result<Containe
 //         .expect("Failed to execute command");
 // }
 
+/// Connects to Docker using the local defaults.
+///
+/// # Returns
+///
+/// Returns a `Result` containing a `Docker` instance if the connection is successful.
+/// If there is an error during the connection, the error is wrapped in a `Box<dyn std::error::Error>`.
+///
+/// # Examples
+///
+/// ```rust
+/// use docker::Docker;
+///
+/// #[tokio::main]
+/// async fn main() {
+///     match connect_to_docker().await {
+///         Ok(docker) => {
+///             println!("Connected to Docker successfully!");
+///             // Use the Docker instance here
+///         }
+///         Err(e) => {
+///             eprintln!("Failed to connect to Docker: {}", e);
+///         }
+///     }
+/// }
+/// ```
 pub async fn connect_to_docker() -> Result<Docker, Box<dyn std::error::Error>> {
     return match Docker::connect_with_local_defaults() {
         Ok(docker) => {

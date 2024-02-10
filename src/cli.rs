@@ -1,7 +1,7 @@
 use clap::{Arg, Command};
 use shlex::Shlex;
 
-pub fn cli() -> Command {
+fn cli() -> Command {
     Command::new("tunnyD")
         .about("Tunnel into a Docker Container")
         .arg(
@@ -22,13 +22,40 @@ pub fn cli() -> Command {
         )
 }
 
-// Define a new struct to hold the user and target values
+/// Represents the arguments for creating a container.
+///
+/// # Fields
+///
+/// * `user`: An optional string representing the user for the container.
+/// * `target`: A string representing the target for the container.
 #[derive(Clone)]
 pub struct ContainerArgs {
     pub user: Option<String>,
     pub target: String,
 }
 
+/// Parses the given data and matches the arguments.
+///
+/// # Arguments
+///
+/// * `data` - A byte slice containing the data to be parsed and matched.
+///
+/// # Returns
+///
+/// The matched arguments wrapped in a `ContainerArgs` object.
+///
+/// # Example
+///
+/// ```
+/// use my_crate::parse_and_match_args;
+///
+/// let data = b"--user john --target server";
+/// let args = parse_and_match_args(data);
+/// ```
+///
+/// # Panics
+///
+/// This function panics if the required argument "target" is not found.
 pub fn parse_and_match_args(data: &[u8]) -> ContainerArgs {
     let data_str = String::from_utf8_lossy(data).into_owned();
     let input = Shlex::new(&data_str);
