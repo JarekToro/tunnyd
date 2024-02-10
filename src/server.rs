@@ -137,12 +137,9 @@ impl Server {
         session_handle: Handle,
         client_id: (usize, ChannelId),
     ) {
-        match process {
-            StartExecResults::Attached { input, output } => {
-                self.link_io(channel, session_handle, client_id, input, output)
-                    .await;
-            }
-            _ => {}
+        if let StartExecResults::Attached { input, output } = process {
+            self.link_io(channel, session_handle, client_id, input, output)
+                .await;
         };
     }
 
