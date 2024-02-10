@@ -1,3 +1,4 @@
+<img src=".github/assets/tunnyd.svg" width="200px" height="200px"/>
 
 # Tunnyd: Easy Docker Container Tunneling with SSH
 
