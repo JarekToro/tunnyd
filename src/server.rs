@@ -161,7 +161,7 @@ impl Server {
             .expect("Client not found");
         let output = Arc::new(Mutex::new(output));
         client.io = Some(OutputInputPair {
-            input: input,
+            input,
             output: Arc::clone(&output),
         });
         let session_handle = Arc::new(Mutex::new(session_handle.clone()));

@@ -33,7 +33,7 @@ async fn main() {
 
     let server = Server {
         clients: Arc::new(Mutex::new(HashMap::new())),
-        docker: docker,
+        docker,
         id: 0,
     };
 
