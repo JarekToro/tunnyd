@@ -79,6 +79,13 @@ cargo build --release
 
 Once built, you can copy the binary to a directory in your PATH for convenient access.
 
+## Documentation
+
+For detailed information about Tunnyd's internals and configuration:
+
+- **[Architecture and Design](docs/architecture.md)** - System design, data flow, and component details
+- **[Configuration Reference](docs/configuration.md)** - Docker labels, SSH config, CLI arguments, and environment variables
+
 ## Contributions
 
 Contributions to Tunnyd are welcome! If you encounter any issues or have ideas for improvements, feel free to open an issue or submit a pull request on the GitHub repository.
