@@ -1,95 +1,380 @@
 <img src=".github/assets/tunnyd.svg" width="200px" height="200px"/>
 
-# Tunnyd: Easy Docker Container Tunneling with SSH
+# Tunnyd
+
 [![Rust](https://github.com/JarekToro/tunnyd/actions/workflows/rust.yml/badge.svg)](https://github.com/JarekToro/tunnyd/actions/workflows/rust.yml)
 
-Tunnyd is a Rust program designed to simplify the process of accessing Docker containers remotely without the need for exposing SSH ports or configuring bastion hosts. By leveraging a custom name pattern, Tunnyd establishes a secure tunneling mechanism, enabling seamless access to Docker containers over SSH.
+**SSH directly into your Docker containers without exposing ports or managing complex networking.**
 
-## Features
+Tunnyd is a lightweight SSH proxy that lets you access Docker containers by hostname through your existing SSH infrastructure. Label your containers, configure your SSH client once, and connect to any container with a simple `ssh` command.
 
-- **Dynamic Tunneling**: Tunnyd dynamically matches container labels with the provided custom name pattern, facilitating easy access to Docker containers.
-- **Secure Communication**: Utilizes SSH for secure communication, ensuring data integrity and confidentiality during transit.
-- **Simplified Configuration**: Eliminates the need for complex network configurations or exposing SSH ports on Docker containers.
-- **Rust-Powered**: Built with Rust, Tunnyd prioritizes performance, reliability, and safety.
+## The Problem
 
-## How It Works
-Tunnyd operates as a surrogate SSH daemon, facilitating secure communication between users and Docker containers. Initially, users establish an SSH connection to the real server using valid authentication and credentials configured in the SSH configuration file. Once connected, Tunnyd on the real server acts as an intermediary, redirecting SSH connections to port 2222, where a custom SSH service provided by Tunnyd resides.
+Running SSH daemons in Docker containers is cumbersome:
+- Each container needs its own exposed SSH port (2222, 2223, 2224...)
+- You have to manage SSH keys and users inside every container
+- Port management becomes a nightmare with many containers
+- Bastion host configurations are complex and error-prone
+- Container images bloat with SSH server installations
 
-Upon connecting to the Tunnyd SSH service, it captures the SSH information and leverages it to execute Docker commands within the targeted container. Tunnyd seamlessly bridges the SSH communication with the Docker container by piping standard input, output, and error streams between the SSH session and the Docker execution process.
+**There has to be a better way.**
 
-This streamlined approach eliminates the need for manual configuration, making remote container access effortless and secure, while maintaining the robust security features provided by SSH.
+## How Tunnyd Solves It
 
-### Setting up SSH Configurations
-Add the following configuration to your `~/.ssh/config` file:
+Tunnyd acts as a smart SSH proxy on your Docker host:
 
-```bash
-Host *.my-docker
-hostname 192.168.100.100  # Actual server the Docker containers are hosted at
-PreferredAuthentications none  # Authentication isn't needed as Tunnyd won't be exposed publicly and will require a ProxyJump to <hostname>
-Port 2222
-RequestTTY yes
-ProxyJump user@hostname
-RemoteCommand tunnyd --target %n --user %r
-Replace 192.168.100.100 with the actual IP address of the server hosting Docker containers. Make sure to replace user and hostname with the appropriate SSH login credentials and hostname for your environment.
-````
-Example Docker Compose Configuration
-Here's an example of how to configure Docker containers for use with Tunnyd using Docker Compose:
+1. **No SSH in containers** - Containers don't need SSH servers installed
+2. **No port exposure** - Tunnyd uses `docker exec` internally, no container ports needed
+3. **Hostname-based routing** - Access containers by name: `ssh user@myapp.docker`
+4. **Label-based access control** - Simple Docker labels control who can access what
+5. **Works with existing SSH** - Uses your SSH client, keys, and ProxyJump setup
 
-```yaml
-version: "3.8"
-services:
-  app1:
-      image:  ubuntu
-      container_name: example
-      labels:
-        - tunnyD.enable=true
-        - tunnyD.allowed.users=git,root
-        - tunnyD.hostname=my-name.my-docker
-  app2:
-      image:  ubuntu
-      container_name: example-2
-      labels:
-        - tunnyD.enable=true
-        - tunnyD.allowed.users=root
-        - tunnyD.hostname=my-media.my-docker
-```
-Ensure that the labels are correctly set for each Docker container you wish to access remotely using Tunnyd. 
-Modify the tunnyD.hostname label to match your custom Docker container naming pattern and adjust the tunnyD.allowed.users label as needed.
+**One Tunnyd instance serves all your containers.**
 
-## Usage
+## Key Features
 
-To use Tunnyd, simply invoke the program with the desired custom name pattern:
+- **Zero container modifications** - Use any image, no SSH installation needed
+- **Dynamic discovery** - Containers are found automatically via Docker labels
+- **Access control** - Restrict users per container with simple labels
+- **Secure by design** - Leverages SSH ProxyJump for authentication
+- **Minimal overhead** - Written in Rust for performance and safety
+- **Simple setup** - Configure once, works for all containers
 
-```bash
-ssh git@my-name.my-docker # You now have a secure shell in app1 container
-ssh root@my-media.my-docker  # You now have a secure shell in app2 container
-```
+## Quick Start
 
-Tunnyd will then establish SSH tunnels (via `docker exec`) to Docker containers matching the specified pattern, allowing seamless access to your remote resources.
+### Prerequisites
 
-## Installation
+- Docker installed and running
+- Rust toolchain (for building from source)
+- SSH access to your Docker host (for ProxyJump)
+- Docker socket access at `/var/run/docker.sock`
 
-To install Tunnyd, ensure you have Rust installed, then clone the repository and build the project:
+### Installation
 
+1. **Clone and build:**
 ```bash
 git clone https://github.com/yourusername/tunnyd.git
 cd tunnyd
 cargo build --release
 ```
 
-Once built, you can copy the binary to a directory in your PATH for convenient access.
+2. **Copy binary to your Docker host:**
+```bash
+# On your Docker host
+sudo cp target/release/main /usr/local/bin/tunnyd
+sudo chmod +x /usr/local/bin/tunnyd
+```
+
+3. **Run Tunnyd** (on your Docker host):
+```bash
+tunnyd
+# Listens on port 2222
+```
+
+### Basic Configuration
+
+**Step 1: Label your Docker containers**
+
+Add these labels to containers you want to access via SSH:
+
+```yaml
+version: "3.8"
+services:
+  myapp:
+    image: ubuntu:latest
+    labels:
+      - tunnyD.enable=true
+      - tunnyD.hostname=myapp.docker
+      - tunnyD.allowed.users=developer,admin  # Optional: restrict users
+```
+
+**Step 2: Configure your SSH client** (`~/.ssh/config`):
+
+```ssh
+Host *.docker
+    HostName 192.168.1.100       # Your Docker host IP
+    Port 2222                    # Tunnyd listens here
+    User %r                      # Pass through your username
+    ProxyJump user@dockerhost    # Jump through your Docker host
+    PreferredAuthentications none
+    RequestTTY yes
+    RemoteCommand tunnyd --target %n --user %r
+```
+
+**Step 3: Connect!**
+
+```bash
+ssh developer@myapp.docker
+# You're now in a bash shell inside the container!
+```
+
+## How It Works
+
+Here's what happens when you run `ssh developer@myapp.docker`:
+
+```
+1. SSH Client
+   ├─> Connects to dockerhost (ProxyJump)
+   │   └─> Authenticates with your SSH key
+   │
+2. SSH Client → Tunnyd (port 2222)
+   ├─> Sends: "tunnyd --target myapp.docker --user developer"
+   │
+3. Tunnyd
+   ├─> Queries Docker API for containers
+   ├─> Finds container with labels:
+   │     • tunnyD.enable=true
+   │     • tunnyD.hostname=myapp.docker
+   │     • tunnyD.allowed.users contains "developer"
+   │
+4. Tunnyd → Docker
+   ├─> Runs: docker exec -it -u developer <container> bash
+   │
+5. Tunnyd bridges I/O
+   ├─> Your keystrokes → container stdin
+   └─> Container stdout/stderr → your terminal
+
+✓ You now have an interactive shell in the container
+```
+
+**Security Note:** Tunnyd itself does not authenticate users. Security is provided by the ProxyJump SSH connection to your Docker host. Only users who can SSH to the Docker host can access Tunnyd.
+
+## Configuration
+
+### Docker Container Labels
+
+Three labels control container access:
+
+| Label | Required | Description | Example |
+|-------|----------|-------------|---------|
+| `tunnyD.enable` | **Yes** | Must be `"true"` to enable access | `tunnyD.enable=true` |
+| `tunnyD.hostname` | **Yes** | Hostname for SSH access | `tunnyD.hostname=api.docker` |
+| `tunnyD.allowed.users` | No | Comma-separated users (empty = all allowed) | `tunnyD.allowed.users=git,deploy` |
+
+### Docker Compose Example
+
+```yaml
+version: "3.8"
+services:
+  # Public access container
+  web:
+    image: nginx:latest
+    labels:
+      - tunnyD.enable=true
+      - tunnyD.hostname=web.docker
+      # No allowed.users = anyone can access
+
+  # Restricted access container
+  database:
+    image: postgres:15
+    labels:
+      - tunnyD.enable=true
+      - tunnyD.hostname=db.docker
+      - tunnyD.allowed.users=dba,admin
+
+  # Developer workspace
+  devbox:
+    image: node:20
+    labels:
+      - tunnyD.enable=true
+      - tunnyD.hostname=dev.docker
+      - tunnyD.allowed.users=alice,bob,carol
+```
+
+### SSH Client Configuration
+
+Edit `~/.ssh/config`:
+
+```ssh
+Host *.docker
+    # Docker host running Tunnyd
+    HostName 192.168.1.100
+    Port 2222
+
+    # Security: Require jump through authenticated host
+    ProxyJump myuser@dockerhost.example.com
+
+    # Pass through username
+    User %r
+
+    # Tunnyd doesn't authenticate (handled by ProxyJump)
+    PreferredAuthentications none
+
+    # Enable interactive terminal
+    RequestTTY yes
+
+    # Execute Tunnyd with target and user
+    RemoteCommand tunnyd --target %n --user %r
+```
+
+**Important:** Replace:
+- `192.168.1.100` with your Docker host IP
+- `myuser@dockerhost.example.com` with your jump host
+
+### Advanced SSH Configuration
+
+**Connection multiplexing** (faster reconnections):
+```ssh
+Host *.docker
+    ControlMaster auto
+    ControlPath ~/.ssh/sockets/%r@%h:%p
+    ControlPersist 10m
+```
+
+**Timeouts and keepalives:**
+```ssh
+Host *.docker
+    ConnectTimeout 10
+    ServerAliveInterval 60
+    ServerAliveCountMax 3
+```
+
+## Usage Examples
+
+### Basic Connection
+
+```bash
+# Connect as "developer" user
+ssh developer@myapp.docker
+
+# Connect as "root" user
+ssh root@myapp.docker
+
+# Run a single command
+ssh developer@myapp.docker ls -la /var/log
+
+# Run interactive command
+ssh developer@myapp.docker -t htop
+```
+
+### Multiple Environments
+
+```yaml
+# docker-compose.yml
+services:
+  app-prod:
+    labels:
+      - tunnyD.enable=true
+      - tunnyD.hostname=app-prod.docker
+      - tunnyD.allowed.users=ops
+
+  app-staging:
+    labels:
+      - tunnyD.enable=true
+      - tunnyD.hostname=app-staging.docker
+      - tunnyD.allowed.users=developer,qa
+```
+
+```bash
+# Operations access to production
+ssh ops@app-prod.docker
+
+# Developer access to staging
+ssh developer@app-staging.docker
+```
+
+### Service-Oriented Architecture
+
+```yaml
+services:
+  auth-service:
+    labels:
+      - tunnyD.enable=true
+      - tunnyD.hostname=auth.services.docker
+
+  payment-service:
+    labels:
+      - tunnyD.enable=true
+      - tunnyD.hostname=payment.services.docker
+
+  notification-service:
+    labels:
+      - tunnyD.enable=true
+      - tunnyD.hostname=notify.services.docker
+```
+
+```bash
+ssh admin@auth.services.docker
+ssh admin@payment.services.docker
+ssh admin@notify.services.docker
+```
+
+## Troubleshooting
+
+### Container not found
+
+```bash
+# Check container is running
+docker ps | grep myapp
+
+# Verify labels are set correctly
+docker inspect myapp | grep tunnyD
+
+# Expected output:
+# "tunnyD.enable": "true",
+# "tunnyD.hostname": "myapp.docker",
+```
+
+### Connection hangs
+
+- Verify Tunnyd is running: `ps aux | grep tunnyd`
+- Check Tunnyd is listening: `netstat -tlnp | grep 2222`
+- Test ProxyJump host: `ssh myuser@dockerhost.example.com`
+- Check firewall allows port 2222
+
+### Permission denied
+
+- Verify user in `tunnyD.allowed.users` label (if set)
+- Check username matches exactly (case-sensitive)
+- Ensure user exists in container: `docker exec myapp id developer`
+
+### Shell not found
+
+If you see "bash: not found", the container doesn't have bash installed.
+
+**Option 1:** Change shell in Tunnyd source (`src/server.rs:161`):
+```rust
+cmd: Some(vec!["sh"]),  // Use sh instead of bash
+```
+
+**Option 2:** Install bash in your container image.
+
+## Use Cases
+
+**Perfect for:**
+- Development environments with many microservices
+- DevOps teams managing containerized infrastructure
+- Debugging production containers without installing SSH
+- Multi-tenant container platforms
+- CI/CD environments needing temporary container access
+
+**Not recommended for:**
+- Production SSH access (use proper bastion hosts)
+- Public-facing services (Tunnyd should be firewalled)
+- Containers that need persistent SSH sessions
 
 ## Documentation
 
-For detailed information about Tunnyd's internals and configuration:
+For detailed technical information:
 
-- **[Architecture and Design](docs/architecture.md)** - System design, data flow, and component details
-- **[Configuration Reference](docs/configuration.md)** - Docker labels, SSH config, CLI arguments, and environment variables
+- **[Architecture and Design](docs/architecture.md)** - System internals, data flow, and component details
+- **[Configuration Reference](docs/configuration.md)** - Complete reference for all configuration options
 
-## Contributions
+## Contributing
 
-Contributions to Tunnyd are welcome! If you encounter any issues or have ideas for improvements, feel free to open an issue or submit a pull request on the GitHub repository.
+Contributions are welcome! We appreciate:
+
+- Bug reports and feature requests (open an issue)
+- Documentation improvements
+- Code contributions (open a pull request)
+- Use case examples and tutorials
+
+Please ensure your code follows Rust best practices and includes appropriate tests.
 
 ## License
 
 Tunnyd is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+
+---
+
+**Made with ❤️ in Rust**
