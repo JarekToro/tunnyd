@@ -71,6 +71,16 @@ tunnyd
 # Listens on port 2222
 ```
 
+**Security:** Ensure port 2222 is NOT exposed to the internet. Configure your firewall to block external access:
+```bash
+# Example: UFW firewall - allow only localhost
+sudo ufw deny 2222
+sudo ufw allow from 127.0.0.1 to any port 2222
+
+# Or allow only from internal network
+sudo ufw allow from 192.168.0.0/16 to any port 2222
+```
+
 ### Basic Configuration
 
 **Step 1: Label your Docker containers**
@@ -170,7 +180,9 @@ Here's what happens when you run `ssh developer@myapp.docker`:
 - **Port 2222**: Tunnyd just routes to containers (no auth needed - you're already in!)
 - **Security**: If you can SSH to the host, you can access Tunnyd. Simple.
 
-**Security Note:** Tunnyd itself does not authenticate users. Security is enforced by the host's SSH daemon on port 22. Only users who can SSH to the Docker host can access Tunnyd on port 2222.
+**Security Notes:**
+- Tunnyd itself does not authenticate users. Security is enforced by the host's SSH daemon on port 22.
+- **IMPORTANT**: Port 2222 should NOT be exposed to external networks. Use firewall rules to restrict access to localhost only, or at minimum to your internal network. Since Tunnyd doesn't authenticate, exposing port 2222 publicly would allow anyone to access your containers.
 
 ## Configuration
 
@@ -385,8 +397,9 @@ cmd: Some(vec!["sh"]),  // Use sh instead of bash
 
 **Not recommended for:**
 - Production SSH access (use proper bastion hosts)
-- Public-facing services (Tunnyd should be firewalled)
+- Public-facing services (**port 2222 must be firewalled** - never expose to internet)
 - Containers that need persistent SSH sessions
+- Environments where Tunnyd port 2222 cannot be restricted to internal networks only
 
 ## Documentation
 
