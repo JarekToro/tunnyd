@@ -93,13 +93,15 @@ services:
 ```ssh
 Host *.docker
     HostName 192.168.1.100       # Your Docker host IP
-    Port 2222                    # Tunnyd listens here
+    Port 2222                    # Tunnyd listens on this port
     User %r                      # Pass through your username
-    ProxyJump user@dockerhost    # Jump through your Docker host
+    ProxyJump user@192.168.1.100 # SSH to SAME host port 22 first (authenticate)
     PreferredAuthentications none
     RequestTTY yes
     RemoteCommand tunnyd --target %n --user %r
 ```
+
+**Important:** `ProxyJump` and `HostName` are the **same server**. You SSH to the host on port 22 (authenticate), then connect to port 2222 (Tunnyd) on the same machine.
 
 **Step 3: Connect!**
 
@@ -113,14 +115,17 @@ ssh developer@myapp.docker
 Here's what happens when you run `ssh developer@myapp.docker`:
 
 ```
-1. SSH Client
-   ├─> Connects to dockerhost (ProxyJump)
-   │   └─> Authenticates with your SSH key
+1. Your SSH Client
+   ├─> Connects to Docker host on port 22 (ProxyJump)
+   │   └─> Standard SSH daemon authenticates you with SSH key
+   │   └─> ✓ Authentication happens HERE
    │
-2. SSH Client → Tunnyd (port 2222)
-   ├─> Sends: "tunnyd --target myapp.docker --user developer"
+2. From Docker Host → Back to Docker Host on port 2222
+   ├─> ProxyJump forwards you to Tunnyd (same server, different port)
+   ├─> Sends RemoteCommand: "tunnyd --target myapp.docker --user developer"
    │
-3. Tunnyd
+3. Tunnyd (port 2222)
+   ├─> NO authentication (you already proved you can SSH to the host)
    ├─> Queries Docker API for containers
    ├─> Finds container with labels:
    │     • tunnyD.enable=true
@@ -137,7 +142,35 @@ Here's what happens when you run `ssh developer@myapp.docker`:
 ✓ You now have an interactive shell in the container
 ```
 
-**Security Note:** Tunnyd itself does not authenticate users. Security is provided by the ProxyJump SSH connection to your Docker host. Only users who can SSH to the Docker host can access Tunnyd.
+### The Key Architectural Detail
+
+**ProxyJump connects to the SAME server twice on different ports:**
+
+```
+┌─────────────────────────────────────┐
+│    Docker Host (192.168.1.100)      │
+│                                     │
+│  Port 22              Port 2222     │
+│  ┌──────────┐        ┌──────────┐  │
+│  │   SSH    │        │ Tunnyd   │  │
+│  │  Daemon  │───────>│ (proxy)  │  │
+│  │ (auth)   │  jump  │ (no auth)│  │
+│  └──────────┘        └─────┬────┘  │
+│       ▲                    │        │
+│       │                    │        │
+│       │                    ▼        │
+│   You connect          docker exec  │
+│   here first           to container │
+│                                     │
+└─────────────────────────────────────┘
+```
+
+**Why this architecture?**
+- **Port 22**: Regular SSH daemon handles authentication (SSH keys, passwords)
+- **Port 2222**: Tunnyd just routes to containers (no auth needed - you're already in!)
+- **Security**: If you can SSH to the host, you can access Tunnyd. Simple.
+
+**Security Note:** Tunnyd itself does not authenticate users. Security is enforced by the host's SSH daemon on port 22. Only users who can SSH to the Docker host can access Tunnyd on port 2222.
 
 ## Configuration
 
@@ -191,13 +224,13 @@ Host *.docker
     HostName 192.168.1.100
     Port 2222
 
-    # Security: Require jump through authenticated host
-    ProxyJump myuser@dockerhost.example.com
+    # Security: First SSH to the SAME host on port 22 (authenticate there)
+    ProxyJump myuser@192.168.1.100
 
     # Pass through username
     User %r
 
-    # Tunnyd doesn't authenticate (handled by ProxyJump)
+    # Tunnyd doesn't authenticate (handled by ProxyJump on port 22)
     PreferredAuthentications none
 
     # Enable interactive terminal
@@ -207,9 +240,11 @@ Host *.docker
     RemoteCommand tunnyd --target %n --user %r
 ```
 
-**Important:** Replace:
-- `192.168.1.100` with your Docker host IP
-- `myuser@dockerhost.example.com` with your jump host
+**Critical Detail:** `ProxyJump` connects to the **same IP address** as `HostName`:
+- First: SSH to `192.168.1.100:22` (standard SSH, authenticate with your key)
+- Then: From there, connect to `192.168.1.100:2222` (Tunnyd, no auth needed)
+
+**Replace `192.168.1.100` with your actual Docker host IP in BOTH places.**
 
 ### Advanced SSH Configuration
 
